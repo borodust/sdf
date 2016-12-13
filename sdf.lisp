@@ -109,13 +109,13 @@
 ;;  MAXRECT packing
 ;;
 
-(defmacro with-rect ((x y &optional (w (gensym)) (h (gensym))) rect &body body)
+(defmacro %with-rect ((x y &optional (w (gensym)) (h (gensym))) rect &body body)
   `(destructuring-bind (,x ,y ,w ,h) ,rect
      (declare (ignorable ,x ,y ,w ,h))
      ,@body))
 
 (defun delta-weight (w h rect)
-  (with-rect (x y rw rh) rect
+  (%with-rect (x y rw rh) rect
     (min (- rw w) (- rh h))))
 
 (defun find-free-rect (w h rects)
@@ -132,8 +132,8 @@
                          min-rect))))
 
 (defun intersectsp (r0 r1)
-  (with-rect (x0 y0 w0 h0) r0
-    (with-rect (x1 y1 w1 h1) r1
+  (%with-rect (x0 y0 w0 h0) r0
+    (%with-rect (x1 y1 w1 h1) r1
       (and (< x0 (+ x1 w1))
            (> (+ x0 w0) x1)
            (< y0 (+ y1 h1))
@@ -145,8 +145,8 @@
 
 (defun subdivide-rect (rect placed)
   (if (intersectsp placed rect)
-      (with-rect (x y w h) rect
-        (with-rect (xp yp wp hp) placed
+      (%with-rect (x y w h) rect
+        (%with-rect (xp yp wp hp) placed
           (let (result)
             ;; left part
             (when (splitsp xp x (+ x w))
@@ -167,8 +167,8 @@
   (loop for free-rect in free-rects appending (subdivide-rect free-rect rect)))
 
 (defun containsp (outer inner)
-  (with-rect (x0 y0 w0 h0) outer
-    (with-rect (x1 y1 w1 h1) inner
+  (%with-rect (x0 y0 w0 h0) outer
+    (%with-rect (x1 y1 w1 h1) inner
       (and (>= (+ x0 w0) (+ x1 w1) x1 x0)
            (>= (+ y0 h0) (+ y1 h1) y1 y0)))))
 
@@ -188,7 +188,7 @@
      finally (return (delete-if #'null result))))
 
 (defun subrect (w h rect)
-  (with-rect (x y) rect
+  (%with-rect (x y) rect
     (list x y w h)))
 
 (defun place-rect (w h free-rects)
@@ -198,13 +198,22 @@
                                                                  free-rects)))))
 
 (defun pack (dimensions &key width height)
+  (labels ((largest-side (el)
+             (max (second el) (third el)))
+           (shortest-side (el)
+             (min (second el) (third el)))
+           (short-side-last ()
+             (sort dimensions #'> :key #'shortest-side))
+           (double-sorted-dimensions ()
+             (sort (short-side-last) #'> :key #'largest-side)))
+
   (loop with free-rects = (list (list 0 0 width height))
-     for (id rect-width rect-height) in dimensions collect
+     for (id rect-width rect-height) in (double-sorted-dimensions) collect
        (multiple-value-bind (rect new-free-rects)
            (place-rect rect-width rect-height free-rects)
          (setf free-rects new-free-rects)
-         (with-rect (x y w h) rect
-           (list id x y w h)))))
+         (%with-rect (x y w h) rect
+           (list id x y w h))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -260,8 +269,8 @@
                           collect (list i
                                         (array-dimension (cdr i) 1)
                                         (array-dimension (cdr i) 0)))
-                    :width 368
-                    :height 368))
+                    :width width
+                    :height height))
              (dims (loop for (nil x y w h) in pack
                          maximize (+ x w) into width
                          maximize (+ y h) into height
@@ -293,11 +302,11 @@
              :scale 32
              :spread 0.1))
 
-
-
 #++
 (time
- (make-atlas "/tmp/atlas.pnm" "/tmp/font2.met"
+ (make-atlas "/tmp/atlas.png" "/tmp/font2.met"
              "/Library/Fonts/Arial.ttf" 48
              :scale 32
-             :spread 0.1))
+             :spread 0.1
+             :width 300
+             :height 300))
